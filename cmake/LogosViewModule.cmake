@@ -25,6 +25,8 @@
 # Public entry point. NAME and REP_FILE are required; QML_URI and
 # QML_TYPE_NAME default to Logos.<RepClass> and <RepClass>.
 function(logos_replica_factory)
+    message(DEPRECATION "logos_replica_factory: replica factories serve ui-host views, which are "
+                        "deprecated; no current host loads them. Removed in the next breaking release.")
     cmake_parse_arguments(VIEW "" "NAME;REP_FILE;QML_URI;QML_TYPE_NAME" "" ${ARGN})
     if(NOT VIEW_NAME)
         message(FATAL_ERROR "logos_replica_factory: NAME is required")

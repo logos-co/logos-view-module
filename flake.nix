@@ -60,6 +60,7 @@
       mkInclude = pkgs: pkgs.runCommand "logos-view-module-include" {} ''
         mkdir -p $out/include
         cp ${./cpp}/logos_ui_plugin_context.h $out/include/
+        cp ${./cpp}/logos_view_channel.h $out/include/
       '';
 
     in {
@@ -87,6 +88,10 @@
         rep-file-plugin = import ./tests/test-rep-file-plugin.nix {
           inherit pkgs;
         };
+
+        # The private channel a view backend run as a core module publishes
+        # on: it must listen even under a macOS-length $TMPDIR.
+        view-channel = import ./tests/test-view-channel.nix { inherit pkgs; };
 
         # Drive the generator over a real .rep + metadata.json and assert it
         # emits the three files with the class names scraped from them. Cheap,
