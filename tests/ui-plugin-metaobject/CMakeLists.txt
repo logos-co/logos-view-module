@@ -1,7 +1,7 @@
 # Builds a REAL view plugin out of the generator's output and checks the
 # meta-object surface ui-host reaches it through. See main.cpp for what is
 # pinned and why it is pinned through strings rather than through the class.
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.25)  # try_compile(SOURCE_FROM_CONTENT)
 project(UiPluginMetaObjectCheck LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)

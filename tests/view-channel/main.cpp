@@ -16,6 +16,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocalSocket>
@@ -41,6 +42,26 @@ public:
     QAbstractItemModel* items() { return &m_items; }
     QStringListModel m_items{ QStringList{ QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c") } };
 };
+
+// Models are published once: a null one, or one that is not CONSTANT, must be
+// warned about rather than silently missed.
+class LateBackend : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QAbstractItemModel* missing READ missing CONSTANT)
+    Q_PROPERTY(QAbstractItemModel* changing READ changing NOTIFY changingChanged)
+public:
+    QAbstractItemModel* missing() { return nullptr; }
+    QAbstractItemModel* changing() { return &m_model; }
+    QStringListModel m_model;
+signals:
+    void changingChanged();
+};
+
+static QStringList g_warnings;
+static void captureWarnings(QtMsgType type, const QMessageLogContext&, const QString& msg)
+{
+    if (type == QtWarningMsg) g_warnings << msg;
+}
 
 // What a SIGKILLed channel leaves: a socket file nobody listens on.
 static bool makeDeadSocket(const QString& path)
@@ -99,7 +120,12 @@ static int rowsSeenWith(const QString& socketName, const QByteArray& firstLine)
 
 int main(int argc, char** argv)
 {
-    const QString longTmp = QDir::tempPath() + QStringLiteral("/macos-like-tmpdir-padding-padding-padding-xx");
+    // A temp dir of a FIXED, macOS-like length (70): long enough that the old
+    // "logos_view_<module>_<32 hex>" names overflowed the 104-byte socket path,
+    // short enough that the real lv_<16 hex> fits. Padding the existing dir by
+    // a fixed amount overflowed on macOS, whose $TMPDIR is already ~50 chars.
+    QString longTmp = QDir::tempPath() + QStringLiteral("/m");
+    while (longTmp.size() < 70) longTmp += QLatin1Char('x');
     QDir().mkpath(longTmp);
     qputenv("TMPDIR", longTmp.toUtf8());
     QCoreApplication app(argc, argv);
@@ -125,6 +151,25 @@ int main(int argc, char** argv)
           "a connection with a wrong secret saw the model");
     CHECK(rowsSeenWith(socket, secret + '\n') == 3, "the view, with its secret, did not see the model");
     CHECK(rowsSeenWith(socket, secret + '\n') == -1, "a secret worked twice");
+
+    // 2b. Model properties are published once; the two cases that are missed are warned.
+    {
+        LogosViewChannel late(QStringLiteral("late_backend"), QStringLiteral("view"));
+        LateBackend lateBackend;
+        g_warnings.clear();
+        const QtMessageHandler previous = qInstallMessageHandler(captureWarnings);
+        late.publishModelProperties(&lateBackend);
+        qInstallMessageHandler(previous);
+        const QString joined = g_warnings.join(QLatin1Char('\n'));
+        CHECK(joined.contains(QStringLiteral("missing")) && joined.contains(QStringLiteral("is null")),
+              "a null model property was not warned about");
+        CHECK(joined.contains(QStringLiteral("changing")) && joined.contains(QStringLiteral("published once")),
+              "a non-CONSTANT model property was not warned about");
+        const QJsonArray models = QJsonDocument::fromJson(late.endpoint().toUtf8())
+                                      .object().value(QStringLiteral("models")).toArray();
+        CHECK(models.contains(QStringLiteral("view/changing")), "the non-null model was not published");
+        CHECK(!models.contains(QStringLiteral("view/missing")), "a null model was listed");
+    }
 
     // 3. Stale sockets.
     const QString tmp = QDir::tempPath() + QLatin1Char('/');

@@ -118,8 +118,9 @@ pkgs.stdenv.mkDerivation {
     # DECLARES the interface to moc. Deleting Q_INTERFACES leaves every
     # string in the binary untouched and only makes qobject_cast return
     # nullptr — the failure that shows up as a blank view. So the plugin is
-    # actually loaded and cast, exactly as
-    # logos-view-module-runtime's LogosQmlBridge::loadFactory does it.
+    # actually loaded and cast, exactly as hosts used to (LogosQmlBridge::loadFactory,
+    # since removed: hosts use dynamic replicas; the factory path is deprecated
+    # with ui-host).
     ./build/load_factory_check "$PWD/$FACTORY" "$EXPECTED_IID" "RepTestReplica"
 
     runHook postCheck

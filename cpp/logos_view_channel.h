@@ -116,16 +116,29 @@ public:
         return m_host.template enableRemoting<ApiDefinition>(source);
     }
 
-    /// Publishes every readable QAbstractItemModel* property of `object`.
+    /// Publishes every readable QAbstractItemModel* property of `object`, once,
+    /// as ui-host did: declare model properties CONSTANT and create the models
+    /// with the backend. A model that is null now, or replaced later, is not
+    /// followed, so either is warned about.
     void publishModelProperties(QObject* object)
     {
         if (!m_listening) return;
         const QMetaObject* mo = object->metaObject();
         for (int i = 0; i < mo->propertyCount(); ++i) {
             const QMetaProperty prop = mo->property(i);
-            if (!prop.isReadable()) continue;
+            const QMetaObject* type = prop.metaType().metaObject();
+            if (!prop.isReadable() || !type || !type->inherits(&QAbstractItemModel::staticMetaObject))
+                continue;
             auto* model = qvariant_cast<QAbstractItemModel*>(prop.read(object));
-            if (!model) continue;
+            if (!model) {
+                qWarning() << "LogosViewChannel: model property" << prop.name()
+                           << "is null when the backend is published; it is not published."
+                              " Create it with the backend and declare it CONSTANT";
+                continue;
+            }
+            if (!prop.isConstant())
+                qWarning() << "LogosViewChannel: model property" << prop.name()
+                           << "is published once; a model set later is not. Declare it CONSTANT";
             const QString name = m_viewName + QLatin1Char('/') + QString::fromUtf8(prop.name());
             if (m_host.enableRemoting(model, name, model->roleNames().keys()))
                 m_models << name;
@@ -139,6 +152,7 @@ public:
     QString endpoint()
     {
         if (!m_listening) return QString();
+        dropExpiredSecrets();
         const QString secret = newSecret();
         m_secrets.insert(secret, QDateTime::currentMSecsSinceEpoch() + kSecretLifetimeMs);
         const QJsonObject o{ { QStringLiteral("socket"), m_socket },
@@ -161,11 +175,18 @@ private:
              + QString::number(rng->generate64(), 16).rightJustified(16, QLatin1Char('0'));
     }
 
-    bool consume(const QString& secret)
+    // Also run on every endpoint(): secrets issued but never used would
+    // otherwise stay until the next handshake.
+    void dropExpiredSecrets()
     {
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         for (auto it = m_secrets.begin(); it != m_secrets.end();)
             it = it.value() < now ? m_secrets.erase(it) : std::next(it);
+    }
+
+    bool consume(const QString& secret)
+    {
+        dropExpiredSecrets();
         return m_secrets.remove(secret) > 0;   // one connection per secret
     }
 
