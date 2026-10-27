@@ -1,8 +1,9 @@
-// Load the built replica-factory plugin the way the host does, and assert the
+// Load the built replica-factory plugin the way hosts used to, and assert the
 // two bindings that a `strings | grep` cannot see.
 //
-// The host (logos-view-module-runtime, LogosQmlBridge::loadFactory) does
-// exactly this: QPluginLoader::instance(), then
+// Hosts (logos-view-module-runtime's LogosQmlBridge::loadFactory, since removed
+// in favour of dynamic replicas; the factory path is deprecated with ui-host)
+// did exactly this: QPluginLoader::instance(), then
 // qobject_cast<LogosViewReplicaFactory*>. Those are two SEPARATE bindings and
 // they fail in different ways:
 //

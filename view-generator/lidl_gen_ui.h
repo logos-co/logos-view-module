@@ -18,9 +18,14 @@ struct UiGlueSpec {
     QString repClass;       // class declared in the user's .rep
     QString backendClass;   // user's backend class (default <pluginBase>Backend)
     QString backendHeader;  // include name (default <name>_backend.h)
+    QString viewName;       // ui-module: the view's module name (models are "<viewName>/<prop>")
 };
 
 bool lidlUiParseRepClass(const QString& repPath, QString* repClass, QString* whyNot);
 QString lidlMakeUiInterfaceHeader(const UiGlueSpec& spec);
 QString lidlMakeUiGlueHeader(const UiGlueSpec& spec);
 QString lidlMakeUiGlueSource(const UiGlueSpec& spec);
+
+// --backend ui-module: the backend runs as a core module, not in ui-host.
+QString lidlMakeUiModuleGlueHeader(const UiGlueSpec& spec);
+QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec);

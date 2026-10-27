@@ -97,9 +97,16 @@ int main(int argc, char* argv[])
     // Backend selection. Defaults to the only backend there is; anything else
     // is an error rather than a silent fallback. See the usage note above.
     const QString backend = argValue(args, "--backend");
-    if (!backend.isEmpty() && backend != QStringLiteral("ui")) {
-        err << "Unknown --backend: " << backend << " (expected ui)\n";
+    const bool asModule = backend == QStringLiteral("ui-module");
+    if (!backend.isEmpty() && backend != QStringLiteral("ui") && !asModule) {
+        err << "Unknown --backend: " << backend << " (expected ui or ui-module)\n";
         return 2;
+    }
+    if (!asModule) {
+        err << "logos-view-generator: DEPRECATED: --backend ui emits a ui-host plugin. Run the "
+               "backend as a core module instead (--backend ui-module, \"backend\": \"module\" "
+               "in metadata.json); ui-host is removed in the next breaking release.\n";
+        err.flush();
     }
 
     const QString metadata = argValue(args, "--metadata");
@@ -107,7 +114,7 @@ int main(int argc, char* argv[])
     QString outputDir      = argValue(args, "--output-dir");
 
     if (metadata.isEmpty() || repPath.isEmpty()) {
-        err << "Usage: logos-view-generator [--backend ui] --metadata <metadata.json> --rep <view.rep>\n"
+        err << "Usage: logos-view-generator [--backend ui|ui-module] --metadata <metadata.json> --rep <view.rep>\n"
             << "         [--backend-class <C>] [--backend-header <h>] [--output-dir <dir>]\n";
         return 2;
     }
@@ -127,6 +134,10 @@ int main(int argc, char* argv[])
         return 3;
     }
     spec.pluginBase = toPascalCase(spec.moduleName);
+    // ui-module: metadata.json is the backend module's (`<view>_backend`); the
+    // view it serves names the models and the user's Backend class/header.
+    spec.viewName = meta.value(QStringLiteral("view_module")).toString(spec.moduleName);
+    const QString viewBase = toPascalCase(spec.viewName);
 
     QString repErr;
     if (!lidlUiParseRepClass(repPath, &spec.repClass, &repErr)) {
@@ -136,16 +147,23 @@ int main(int argc, char* argv[])
 
     spec.backendClass = argValue(args, "--backend-class");
     if (spec.backendClass.isEmpty())
-        spec.backendClass = spec.pluginBase + QStringLiteral("Backend");
+        spec.backendClass = viewBase + QStringLiteral("Backend");
     spec.backendHeader = argValue(args, "--backend-header");
     if (spec.backendHeader.isEmpty())
-        spec.backendHeader = spec.moduleName + QStringLiteral("_backend.h");
+        spec.backendHeader = spec.viewName + QStringLiteral("_backend.h");
 
     if (outputDir.isEmpty())
         outputDir = QDir::current().filePath("generated");
     QDir().mkpath(outputDir);
 
     QList<Out> outs;
+    if (asModule) {
+        outs.append({spec.moduleName + "_ui_module_glue.h",   lidlMakeUiModuleGlueHeader(spec)});
+        outs.append({spec.moduleName + "_ui_module_glue.cpp", lidlMakeUiModuleGlueSource(spec)});
+        const int rc = writeAll(outs, outputDir, out, err);
+        out.flush();
+        return rc;
+    }
     outs.append({spec.moduleName + "_ui_interface.h", lidlMakeUiInterfaceHeader(spec)});
     outs.append({spec.moduleName + "_ui_glue.h",      lidlMakeUiGlueHeader(spec)});
     outs.append({spec.moduleName + "_ui_glue.cpp",    lidlMakeUiGlueSource(spec)});

@@ -1,7 +1,7 @@
 # Builds a REAL view plugin out of the generator's output and checks the
 # meta-object surface ui-host reaches it through. See main.cpp for what is
 # pinned and why it is pinned through strings rather than through the class.
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.25)  # try_compile(SOURCE_FROM_CONTENT)
 project(UiPluginMetaObjectCheck LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -34,6 +34,31 @@ endif()
 if(NOT LOGOS_VIEW_INCLUDE_DIR)
     message(FATAL_ERROR "ui-plugin-metaobject: LOGOS_VIEW_INCLUDE_DIR is not set.")
 endif()
+
+# A backend that derives LogosUiPluginContext must be told it is deprecated;
+# the header's own helpers must not be (they only dispatch on the class).
+try_compile(_ui_ctx_deprecation_silent
+    SOURCE_FROM_CONTENT check.cpp
+        "#include \"logos_ui_plugin_context.h\"\nstruct B : LogosUiPluginContext {};\nint main() { B b; return 0; }\n"
+    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${LOGOS_VIEW_INCLUDE_DIR}"
+    COMPILE_DEFINITIONS -Werror=deprecated-declarations
+    OUTPUT_VARIABLE _ui_ctx_deprecation_log)
+if(_ui_ctx_deprecation_silent)
+    message(FATAL_ERROR "LogosUiPluginContext is not marked deprecated for its backends")
+elseif(NOT _ui_ctx_deprecation_log MATCHES "LogosUiPluginContext \\(ui-host\\) is deprecated")
+    message(FATAL_ERROR "the deprecation check failed for another reason:\n${_ui_ctx_deprecation_log}")
+endif()
+try_compile(_ui_ctx_helpers_clean
+    SOURCE_FROM_CONTENT helpers.cpp
+        "#include \"logos_ui_plugin_context.h\"\nint main() { return 0; }\n"
+    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${LOGOS_VIEW_INCLUDE_DIR}"
+    COMPILE_DEFINITIONS -Werror=deprecated-declarations
+    OUTPUT_VARIABLE _ui_ctx_helpers_log)
+if(NOT _ui_ctx_helpers_clean)
+    message(FATAL_ERROR "including logos_ui_plugin_context.h alone warns:\n${_ui_ctx_helpers_log}")
+endif()
+# This fixture IS a ui-host backend, on purpose.
+add_compile_definitions(LOGOS_UI_HOST_ALLOWED)
 
 set(REP_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Ticker.rep")
 

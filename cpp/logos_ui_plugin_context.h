@@ -4,6 +4,17 @@
 #include <functional>
 #include <type_traits>
 
+// Deprecated with ui-host: a backend that runs as a core module ("backend":
+// "module") derives LogosModuleContext instead. Removed in the next breaking
+// release; LOGOS_UI_HOST_ALLOWED silences the warning until then.
+#if defined(LOGOS_UI_HOST_ALLOWED)
+#define LOGOS_UI_PLUGIN_CONTEXT_DEPRECATED
+#else
+#define LOGOS_UI_PLUGIN_CONTEXT_DEPRECATED                                            \
+    [[deprecated("LogosUiPluginContext (ui-host) is deprecated: add \"backend\": \"module\" "\
+                 "to metadata.json and derive LogosModuleContext")]]
+#endif
+
 // ---------------------------------------------------------------------------
 // LogosUiPluginContext — opt-in mixin for codegen-generated UI plugins
 //
@@ -71,6 +82,9 @@ enum class LogosShutdown {
 
 class LogosUiPluginContext {
 public:
+    // On the constructor, not the class: GCC does not warn for a deprecated
+    // base class, but every backend that derives this one calls it.
+    LOGOS_UI_PLUGIN_CONTEXT_DEPRECATED LogosUiPluginContext() = default;
     virtual ~LogosUiPluginContext() = default;
 
     // Typed access to this plugin's per-build `LogosModules` aggregate, which
@@ -179,6 +193,12 @@ private:
 // (the discarded `static_cast` is never type-checked). Mirrors the
 // `maybeSet*` helpers in logos-cpp-sdk's `logos_module_context.h`.
 // ---------------------------------------------------------------------------
+// The helpers below name the class only to dispatch on it; the warning is for
+// the backend author's own `: public LogosUiPluginContext`, not for these.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 namespace _logos_codegen_ {
 
 template<class T>
@@ -221,5 +241,8 @@ inline auto maybeUiPluginAboutToUnload(T&, Cb)
 }
 
 } // namespace _logos_codegen_
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif // LOGOS_UI_PLUGIN_CONTEXT_H
