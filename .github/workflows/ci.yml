@@ -36,3 +36,14 @@ jobs:
       # performs the same qobject_cast ui-host does.
       - name: .rep replica factory builds, loads and casts
         run: nix build '.#checks.x86_64-linux.rep-file-plugin'
+
+      # The view channel a module backend serves its view on: the one-time
+      # secret (no / wrong / reused secret is refused), model properties, a long
+      # TMPDIR (macOS socket-path limit) and removing stale lv_* sockets.
+      - name: View channel
+        run: nix build '.#checks.x86_64-linux.view-channel'
+
+      # The ui-host plugin's meta-object as ui-host sees it, and the
+      # LogosUiPluginContext deprecation: a derived backend must warn.
+      - name: UI plugin meta-object and deprecation
+        run: nix build '.#checks.x86_64-linux.ui-plugin-metaobject'
