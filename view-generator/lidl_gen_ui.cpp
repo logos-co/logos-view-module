@@ -110,8 +110,10 @@ QString lidlMakeUiGlueHeader(const UiGlueSpec& spec)
     s << "    // connects to this by name and stops waiting on the first one.\n";
     s << "    void unloadFinished();\n\n";
     s << "private:\n";
-    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
+    // Destroyed in reverse: the backend first, while the dependency wrappers
+    // its destructor may still call are alive.
     s << "    std::unique_ptr<LogosModules> m_logosModules;\n";
+    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
     s << "};\n";
     return h;
 }
@@ -208,8 +210,10 @@ QString lidlMakeUiModuleGlueHeader(const UiGlueSpec& spec)
     s << "Q_SIGNALS:\n";
     s << "    void unloadFinished();\n\n";
     s << "private:\n";
-    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
+    // Destroyed in reverse: the channel first, then the backend, while the
+    // dependency wrappers its destructor may still call are alive.
     s << "    std::unique_ptr<LogosModules> m_logosModules;\n";
+    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
     s << "    std::unique_ptr<LogosViewChannel> m_channel;\n";
     s << "};\n";
     return h;
@@ -280,7 +284,10 @@ QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec)
     s << "        api->property(\"instancePersistencePath\").toString().toStdString());\n";
     s << "    m_channel = std::make_unique<LogosViewChannel>(name(), QStringLiteral(\""
       << spec.viewName << "\"));\n";
-    s << "    m_channel->publishSource<" << spec.repClass << "SourceAPI>(m_backend.get(), QStringLiteral(\""
+    // Published as the SimpleSource, as ui-host does: SourceAPI<T> takes
+    // &T::<property>, and a backend member of the same name would hide it.
+    s << "    m_channel->publishSource<" << spec.repClass << "SourceAPI>(static_cast<"
+      << spec.repClass << "SimpleSource*>(m_backend.get()), QStringLiteral(\""
       << spec.repClass << "\"));\n";
     s << "    m_channel->publishModelProperties(m_backend.get());\n";
     s << "}\n\n";

@@ -149,6 +149,22 @@
             || { echo "aboutToUnload() does not delegate to the SFINAE helper"; exit 1; }
           grep -q 'Qt::QueuedConnection' out/ticker_panel_ui_glue.cpp \
             || { echo "unloadFinished() is not emitted through a QUEUED connection"; exit 1; }
+
+          # A backend run as a core module is published as its SimpleSource,
+          # as ui-host does: a backend member named like a .rep property would
+          # otherwise hide the getter SourceAPI takes, and the app not compile.
+          logos-view-generator --backend ui-module --metadata metadata.json --rep Ticker.rep --output-dir out-module
+          grep -rq 'publishSource<TickerBackendSourceAPI>(static_cast<TickerBackendSimpleSource\*>' out-module \
+            || { echo "module backend not published as its SimpleSource"; exit 1; }
+
+          # The backend's destructor may still call its dependencies, so the
+          # wrappers must outlive it: declared first, destroyed last.
+          for h in out/ticker_panel_ui_glue.h out-module/*_glue.h; do
+            mods=$(grep -n ' m_logosModules;' "$h" | cut -d: -f1 || true)
+            back=$(grep -n ' m_backend;' "$h" | cut -d: -f1 || true)
+            [ -n "$mods" ] && [ -n "$back" ] && [ "$mods" -lt "$back" ] \
+              || { echo "$h: m_logosModules must be declared before m_backend"; exit 1; }
+          done
           touch $out
         '';
 
