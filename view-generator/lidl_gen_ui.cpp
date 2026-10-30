@@ -110,8 +110,10 @@ QString lidlMakeUiGlueHeader(const UiGlueSpec& spec)
     s << "    // connects to this by name and stops waiting on the first one.\n";
     s << "    void unloadFinished();\n\n";
     s << "private:\n";
-    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
+    // Destroyed in reverse: the backend first, while the dependency wrappers
+    // its destructor may still call are alive.
     s << "    std::unique_ptr<LogosModules> m_logosModules;\n";
+    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
     s << "};\n";
     return h;
 }
@@ -208,8 +210,10 @@ QString lidlMakeUiModuleGlueHeader(const UiGlueSpec& spec)
     s << "Q_SIGNALS:\n";
     s << "    void unloadFinished();\n\n";
     s << "private:\n";
-    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
+    // Destroyed in reverse: the channel first, then the backend, while the
+    // dependency wrappers its destructor may still call are alive.
     s << "    std::unique_ptr<LogosModules> m_logosModules;\n";
+    s << "    std::unique_ptr<" << spec.backendClass << "> m_backend;\n";
     s << "    std::unique_ptr<LogosViewChannel> m_channel;\n";
     s << "};\n";
     return h;

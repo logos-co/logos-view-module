@@ -156,6 +156,15 @@
           logos-view-generator --backend ui-module --metadata metadata.json --rep Ticker.rep --output-dir out-module
           grep -rq 'publishSource<TickerBackendSourceAPI>(static_cast<TickerBackendSimpleSource\*>' out-module \
             || { echo "module backend not published as its SimpleSource"; exit 1; }
+
+          # The backend's destructor may still call its dependencies, so the
+          # wrappers must outlive it: declared first, destroyed last.
+          for h in out/ticker_panel_ui_glue.h out-module/*_glue.h; do
+            mods=$(grep -n ' m_logosModules;' "$h" | cut -d: -f1 || true)
+            back=$(grep -n ' m_backend;' "$h" | cut -d: -f1 || true)
+            [ -n "$mods" ] && [ -n "$back" ] && [ "$mods" -lt "$back" ] \
+              || { echo "$h: m_logosModules must be declared before m_backend"; exit 1; }
+          done
           touch $out
         '';
 
