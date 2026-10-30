@@ -280,7 +280,10 @@ QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec)
     s << "        api->property(\"instancePersistencePath\").toString().toStdString());\n";
     s << "    m_channel = std::make_unique<LogosViewChannel>(name(), QStringLiteral(\""
       << spec.viewName << "\"));\n";
-    s << "    m_channel->publishSource<" << spec.repClass << "SourceAPI>(m_backend.get(), QStringLiteral(\""
+    // Published as the SimpleSource, as ui-host does: SourceAPI<T> takes
+    // &T::<property>, and a backend member of the same name would hide it.
+    s << "    m_channel->publishSource<" << spec.repClass << "SourceAPI>(static_cast<"
+      << spec.repClass << "SimpleSource*>(m_backend.get()), QStringLiteral(\""
       << spec.repClass << "\"));\n";
     s << "    m_channel->publishModelProperties(m_backend.get());\n";
     s << "}\n\n";

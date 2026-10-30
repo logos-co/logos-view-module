@@ -149,6 +149,13 @@
             || { echo "aboutToUnload() does not delegate to the SFINAE helper"; exit 1; }
           grep -q 'Qt::QueuedConnection' out/ticker_panel_ui_glue.cpp \
             || { echo "unloadFinished() is not emitted through a QUEUED connection"; exit 1; }
+
+          # A backend run as a core module is published as its SimpleSource,
+          # as ui-host does: a backend member named like a .rep property would
+          # otherwise hide the getter SourceAPI takes, and the app not compile.
+          logos-view-generator --backend ui-module --metadata metadata.json --rep Ticker.rep --output-dir out-module
+          grep -rq 'publishSource<TickerBackendSourceAPI>(static_cast<TickerBackendSimpleSource\*>' out-module \
+            || { echo "module backend not published as its SimpleSource"; exit 1; }
           touch $out
         '';
 
