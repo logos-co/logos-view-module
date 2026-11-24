@@ -176,7 +176,9 @@ QString lidlMakeUiGlueSource(const UiGlueSpec& spec)
 // The plugin hands logos core a dedicated provider (LogosProviderPlugin), so
 // the module's callable API is exactly view_endpoint() — not every slot the
 // plugin QObject happens to have (deleteLater, initLogos, ...), which is what
-// wrapping the plugin itself would expose.
+// wrapping the plugin itself would expose. An app that provides intents adds
+// deliver() (intents_module's contracts/intent_provider.lidl), for
+// intents_module alone, forwarded to the backend's own deliver().
 
 QString lidlMakeUiModuleGlueHeader(const UiGlueSpec& spec)
 {
@@ -203,7 +205,13 @@ QString lidlMakeUiModuleGlueHeader(const UiGlueSpec& spec)
     s << "    LogosProviderObject* createProviderObject() override;\n\n";
     s << "    // Called by the provider once logos core hands it its LogosAPI.\n";
     s << "    void setUp(LogosAPI* api);\n";
-    s << "    QString viewEndpoint();\n\n";
+    s << "    QString viewEndpoint();\n";
+    if (spec.intentProvider) {
+        s << "    // intents_module's delivery: the backend's deliver(), for intents_module alone.\n";
+        s << "    QString deliver(const QString& dispatch, const QString& intent,\n";
+        s << "                    const QString& paramsJson, const QString& requester);\n";
+    }
+    s << "\n";
     s << "    // The module teardown hook logos_host reaches BY NAME on the plugin\n";
     s << "    // (0 = Synchronous, 1 = Asynchronous; see logos_plugin_unload.h).\n";
     s << "    Q_INVOKABLE int aboutToUnload();\n\n";
@@ -233,9 +241,54 @@ QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec)
     s << "#include \"logos_module_context.h\"\n";
     s << "#include \"logos_provider_object.h\"\n";
     s << "#include \"logos_view_channel.h\"\n";
-    s << "#include \"logos_sdk.h\"\n\n";
+    s << "#include \"logos_sdk.h\"\n";
+    if (spec.intentProvider) {
+        s << "#include \"logos_caller.h\"\n\n";
+        s << "#include <type_traits>\n#include <utility>\n";
+    }
+    s << "\n";
     s << "namespace {\n\n";
-    s << "// The module's callable surface: view_endpoint() and nothing else.\n";
+    if (spec.intentProvider) {
+        s << "template <typename B, typename = void>\n";
+        s << "struct HasDeliver : std::false_type {};\n";
+        s << "template <typename B>\n";
+        s << "struct HasDeliver<B, std::void_t<decltype(QString(std::declval<B&>().deliver(\n";
+        s << "    QString(), QString(), QString(), QString())))>> : std::true_type {};\n\n";
+        // Not an error: an app can move its backend to a core module first and
+        // its intents later. Until it has deliver(), every delivery is refused.
+        const QString missing = spec.viewName + QStringLiteral(" provides intents (metadata.json `provides`), but ")
+            + spec.backendClass + QStringLiteral(" has no QString deliver(const QString& dispatch, "
+              "const QString& intent, const QString& paramsJson, const QString& requester): "
+              "intents_module's deliveries are refused");
+        // A template, so the warning comes only with the backend that lacks it.
+        s << "template <typename B>\n";
+        s << "[[deprecated(\"" << missing << "\")]] void backendHasNoDeliver() {}\n\n";
+        s << "template <typename B>\n";
+        s << "QString deliverTo(B& backend, const QString& dispatch, const QString& intent,\n";
+        s << "                  const QString& paramsJson, const QString& requester)\n{\n";
+        s << "    if constexpr (HasDeliver<B>::value) {\n";
+        s << "        return backend.deliver(dispatch, intent, paramsJson, requester);\n";
+        s << "    } else {\n";
+        s << "        backendHasNoDeliver<B>();\n";
+        s << "        static bool warned = false;\n";
+        s << "        if (!warned) {\n";
+        s << "            warned = true;\n";
+        s << "            qWarning(\"%s\", \"" << missing << "\");\n";
+        s << "        }\n";
+        s << "        (void)backend; (void)dispatch; (void)intent; (void)paramsJson; (void)requester;\n";
+        s << "        return QStringLiteral(\"{\\\"ok\\\":false}\");\n";
+        s << "    }\n";
+        s << "}\n\n";
+        s << "// Who is calling, for one dispatch: pulled from the host image and pushed\n";
+        s << "// where logos::currentCaller() reads it in this one, as module glue does.\n";
+        s << "struct CallerPush {\n";
+        s << "    explicit CallerPush(const std::string& caller) { logos::detail::setCallCaller(caller.c_str()); }\n";
+        s << "    ~CallerPush() { logos::detail::setCallCaller(nullptr); }\n";
+        s << "};\n\n";
+    }
+    s << (spec.intentProvider
+          ? "// The module's callable surface: view_endpoint() and deliver(), nothing else.\n"
+          : "// The module's callable surface: view_endpoint() and nothing else.\n");
     s << "class " << provider << " : public LogosProviderBase\n{\npublic:\n";
     s << "    explicit " << provider << "(" << plugin << "* plugin) : m_plugin(plugin) {}\n\n";
     s << "    QString providerName() const override { return m_plugin->name(); }\n";
@@ -243,17 +296,37 @@ QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec)
     s << "    QVariant callMethod(const QString& method, const QVariantList& args) override\n    {\n";
     s << "        if (method == QLatin1String(\"view_endpoint\") && args.isEmpty())\n";
     s << "            return m_plugin->viewEndpoint();\n";
+    if (spec.intentProvider) {
+        s << "        if (method == QLatin1String(\"deliver\") && args.size() == 4) {\n";
+        s << "            const CallerPush caller(currentCallerJson());\n";
+        s << "            return m_plugin->deliver(args[0].toString(), args[1].toString(),\n";
+        s << "                                     args[2].toString(), args[3].toString());\n";
+        s << "        }\n";
+    }
     s << "        return QVariantMap{ { QStringLiteral(\"code\"), QStringLiteral(\"unknown_method\") },\n";
     s << "                            { QStringLiteral(\"message\"), QStringLiteral(\"unknown method '%1'\").arg(method) },\n";
     s << "                            { QStringLiteral(\"origin\"), providerName() } };\n";
     s << "    }\n\n";
     s << "    QJsonArray getMethods() override\n    {\n";
-    s << "        return QJsonArray{ QJsonObject{ { QStringLiteral(\"name\"), QStringLiteral(\"view_endpoint\") },\n";
-    s << "                                        { QStringLiteral(\"signature\"), QStringLiteral(\"view_endpoint()\") },\n";
-    s << "                                        { QStringLiteral(\"returnType\"), QStringLiteral(\"QString\") },\n";
-    s << "                                        { QStringLiteral(\"isInvokable\"), true },\n";
-    s << "                                        { QStringLiteral(\"parameters\"), QJsonArray() },\n";
-    s << "                                        { QStringLiteral(\"type\"), QStringLiteral(\"method\") } } };\n";
+    s << "        QJsonArray methods{ QJsonObject{ { QStringLiteral(\"name\"), QStringLiteral(\"view_endpoint\") },\n";
+    s << "                                         { QStringLiteral(\"signature\"), QStringLiteral(\"view_endpoint()\") },\n";
+    s << "                                         { QStringLiteral(\"returnType\"), QStringLiteral(\"QString\") },\n";
+    s << "                                         { QStringLiteral(\"isInvokable\"), true },\n";
+    s << "                                         { QStringLiteral(\"parameters\"), QJsonArray() },\n";
+    s << "                                         { QStringLiteral(\"type\"), QStringLiteral(\"method\") } } };\n";
+    if (spec.intentProvider) {
+        s << "        QJsonArray params;\n";
+        s << "        for (const char* p : { \"dispatch\", \"intent\", \"params_json\", \"requester\" })\n";
+        s << "            params.append(QJsonObject{ { QStringLiteral(\"name\"), QLatin1String(p) },\n";
+        s << "                                       { QStringLiteral(\"type\"), QStringLiteral(\"QString\") } });\n";
+        s << "        methods.append(QJsonObject{ { QStringLiteral(\"name\"), QStringLiteral(\"deliver\") },\n";
+        s << "                                    { QStringLiteral(\"signature\"), QStringLiteral(\"deliver(QString,QString,QString,QString)\") },\n";
+        s << "                                    { QStringLiteral(\"returnType\"), QStringLiteral(\"QString\") },\n";
+        s << "                                    { QStringLiteral(\"isInvokable\"), true },\n";
+        s << "                                    { QStringLiteral(\"parameters\"), params },\n";
+        s << "                                    { QStringLiteral(\"type\"), QStringLiteral(\"method\") } });\n";
+    }
+    s << "        return methods;\n";
     s << "    }\n\n";
     s << "protected:\n";
     s << "    void onInit(LogosAPI* api) override { m_plugin->setUp(api); }\n\n";
@@ -294,6 +367,15 @@ QString lidlMakeUiModuleGlueSource(const UiGlueSpec& spec)
     s << "QString " << plugin << "::viewEndpoint()\n{\n";
     s << "    return m_channel ? m_channel->endpoint() : QString();\n";
     s << "}\n\n";
+    if (spec.intentProvider) {
+        s << "QString " << plugin << "::deliver(const QString& dispatch, const QString& intent,\n";
+        s << QString(" ").repeated(int(plugin.size()) + 18) << "const QString& paramsJson, const QString& requester)\n{\n";
+        s << "    // Anyone else's call reads as a delivery nobody took.\n";
+        s << "    if (!logos::currentCaller().isModule(\"intents_module\"))\n";
+        s << "        return QStringLiteral(\"{\\\"ok\\\":false}\");\n";
+        s << "    return deliverTo(*m_backend, dispatch, intent, paramsJson, requester);\n";
+        s << "}\n\n";
+    }
     s << "int " << plugin << "::aboutToUnload()\n{\n";
     s << "    // Installed BEFORE asking: a backend that finishes inline would\n";
     s << "    // otherwise signal into an empty slot. Queued, because the backend may\n";

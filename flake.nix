@@ -165,6 +165,32 @@
             [ -n "$mods" ] && [ -n "$back" ] && [ "$mods" -lt "$back" ] \
               || { echo "$h: m_logosModules must be declared before m_backend"; exit 1; }
           done
+
+          # deliver() only for an app that provides intents, for intents_module
+          # alone, with the caller pushed for the dispatch and popped after.
+          grep -q 'deliver' out-module/*_glue.cpp out-module/*_glue.h \
+            && { echo "deliver() emitted for a backend that provides no intents"; exit 1; }
+          sed 's/^{/{ "intent_provider": true, /' metadata.json > provider.json
+          logos-view-generator --backend ui-module --metadata provider.json --rep Ticker.rep --output-dir out-provider
+          glue=out-provider/ticker_panel_ui_module_glue.cpp
+          grep -q 'method == QLatin1String("deliver") && args.size() == 4' $glue \
+            || { echo "deliver() not dispatched"; exit 1; }
+          grep -q 'const CallerPush caller(currentCallerJson());' $glue \
+            || { echo "deliver() runs without its caller pushed"; exit 1; }
+          grep -q 'logos::detail::setCallCaller(nullptr)' $glue \
+            || { echo "the caller is never popped"; exit 1; }
+          grep -q 'if (!logos::currentCaller().isModule("intents_module"))' $glue \
+            || { echo "deliver() is not for intents_module alone"; exit 1; }
+          grep -q 'deliver(QString,QString,QString,QString)' $glue \
+            || { echo "deliver() missing from getMethods()"; exit 1; }
+          grep -q 'if constexpr (HasDeliver<B>::value)' $glue \
+            || { echo "deliver() is not the backend's when it has one"; exit 1; }
+          grep -q 'deprecated(' $glue && grep -q 'backendHasNoDeliver<B>();' $glue \
+            || { echo "a backend without deliver() builds without a warning"; exit 1; }
+          grep -qF '{\"ok\":false}' $glue \
+            || { echo "a backend without deliver() does not refuse deliveries"; exit 1; }
+          grep -q 'QString deliver(const QString& dispatch' out-provider/*_glue.h \
+            || { echo "the plugin does not declare deliver()"; exit 1; }
           touch $out
         '';
 

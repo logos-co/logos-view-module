@@ -19,6 +19,7 @@ struct UiGlueSpec {
     QString backendClass;   // user's backend class (default <pluginBase>Backend)
     QString backendHeader;  // include name (default <name>_backend.h)
     QString viewName;       // ui-module: the view's module name (models are "<viewName>/<prop>")
+    bool intentProvider = false;  // ui-module: the app provides intents; deliver() is callable
 };
 
 bool lidlUiParseRepClass(const QString& repPath, QString* repClass, QString* whyNot);
