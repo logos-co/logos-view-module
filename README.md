@@ -65,7 +65,11 @@ GENERATED       <name>_ui_module_glue.{h,cpp}
                                        maybeSet* helpers, publishes the backend
                                        on a LogosViewChannel, and hands logos
                                        core a LogosProviderPlugin whose only
-                                       method is view_endpoint()
+                                       method is view_endpoint() — plus, when
+                                       the metadata says intent_provider (the
+                                       builder sets it for an app that lists
+                                       `provides`), deliver() for
+                                       intents_module alone (preview)
 ```
 
 In `ui-host` (deprecated, removed in the next breaking release):

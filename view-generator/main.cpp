@@ -137,6 +137,8 @@ int main(int argc, char* argv[])
     // ui-module: metadata.json is the backend module's (`<view>_backend`); the
     // view it serves names the models and the user's Backend class/header.
     spec.viewName = meta.value(QStringLiteral("view_module")).toString(spec.moduleName);
+    // ui-module: set by the builder when the app's metadata `provides` intents.
+    spec.intentProvider = meta.value(QStringLiteral("intent_provider")).toBool();
     const QString viewBase = toPascalCase(spec.viewName);
 
     QString repErr;
